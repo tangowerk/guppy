@@ -85,6 +85,13 @@ pub fn open(path: &Path) -> io::Result<()> {
         c.args(["/C", "start", ""]);
         c
     };
+    // Prefer `gio open`: it matches the file name against the shared MIME
+    // globs. Outside a known desktop, `xdg-open` only sniffs the content, so
+    // container formats (e.g. a zip-based `.sc`) end up in the archive handler.
+    #[cfg(all(unix, not(target_os = "macos")))]
+    if command("gio").arg("open").arg(path).spawn().is_ok() {
+        return Ok(());
+    }
     #[cfg(all(unix, not(target_os = "macos")))]
     let mut cmd = command("xdg-open");
     cmd.arg(path).spawn().map(|_| ())
