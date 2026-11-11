@@ -243,9 +243,85 @@ pub fn start(kind: OpKind, sources: Vec<PathBuf>, target: Option<PathBuf>) -> Jo
     job
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(windows)]
 fn trash_one(src: &Path) -> Result<(), String> {
     trash::delete(src).map_err(|e| e.to_string())
+}
+
+/// Trashes `src`. Items on the home filesystem go through the `trash` crate;
+/// items on other filesystems go into `$topdir/.Trash-$uid` by rename only.
+/// The crate would silently fall back to the home trash when that rename is
+/// refused (e.g. a file locked on an SMB share) and then copy the whole thing
+/// across devices, which can take hours for large files. We refuse instead.
+#[cfg(all(unix, not(target_os = "macos")))]
+fn trash_one(src: &Path) -> Result<(), String> {
+    use std::os::unix::fs::MetadataExt;
+    let src_dev = src.symlink_metadata().map_err(|e| e.to_string())?.dev();
+    let home_trash = dirs::data_local_dir().map(|d| d.join("Trash"));
+    let home_dev = home_trash.as_deref().and_then(|t| t.ancestors().find_map(|a| a.metadata().ok()).map(|m| m.dev()));
+    if home_dev == Some(src_dev) {
+        return trash::delete(src).map_err(|e| e.to_string());
+    }
+    volume_trash(src, src_dev)
+}
+
+/// Moves `src` into the per-volume trash of its filesystem (freedesktop spec).
+#[cfg(all(unix, not(target_os = "macos")))]
+fn volume_trash(src: &Path, dev: u64) -> Result<(), String> {
+    use std::io::Write;
+    use std::os::unix::fs::MetadataExt;
+    let src = if src.is_absolute() { src.to_path_buf() } else { std::env::current_dir().map_err(|e| e.to_string())?.join(src) };
+    // Topmost ancestor still on the same device = the mount point.
+    let parent = src.parent().ok_or("cannot trash a filesystem root")?;
+    let topdir = parent
+        .ancestors()
+        .take_while(|a| a.metadata().is_ok_and(|m| m.dev() == dev))
+        .last()
+        .ok_or("cannot find the mount point")?;
+    let trash_dir = topdir.join(format!(".Trash-{}", unsafe { libc::getuid() }));
+    let (files, info) = (trash_dir.join("files"), trash_dir.join("info"));
+    for d in [&files, &info] {
+        std::fs::create_dir_all(d).map_err(|e| format!("cannot use the trash on this drive ({e}); delete permanently instead (Shift+F8)"))?;
+    }
+    let name = src.file_name().ok_or("no file name")?.to_string_lossy().into_owned();
+    // Reserve a unique name by creating its .trashinfo exclusively.
+    let (stem, info_path, mut f) = (1..)
+        .map(|i| if i == 1 { name.clone() } else { format!("{name}.{i}") })
+        .find_map(|n| {
+            let p = info.join(format!("{n}.trashinfo"));
+            match std::fs::OpenOptions::new().write(true).create_new(true).open(&p) {
+                Ok(f) => Some(Ok((n, p, f))),
+                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => None,
+                Err(e) => Some(Err(e.to_string())),
+            }
+        })
+        .unwrap()?;
+    let date = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S");
+    let written = writeln!(f, "[Trash Info]\nPath={}\nDeletionDate={date}", percent_encode(&src));
+    drop(f);
+    let moved = written.map_err(|e| e.to_string()).and_then(|_| std::fs::rename(&src, files.join(&stem)).map_err(|e| e.to_string()));
+    if let Err(e) = moved {
+        let _ = std::fs::remove_file(&info_path);
+        return Err(format!(
+            "could not move into the trash on this drive ({e}); the file may be in use on the server. Delete permanently instead (Shift+F8)"
+        ));
+    }
+    Ok(())
+}
+
+/// Percent-encodes a path for a .trashinfo `Path=` line (keeps `/`).
+#[cfg(all(unix, not(target_os = "macos")))]
+fn percent_encode(p: &Path) -> String {
+    use std::os::unix::ffi::OsStrExt;
+    let mut out = String::new();
+    for &b in p.as_os_str().as_bytes() {
+        if b.is_ascii_alphanumeric() || b"/-_.~".contains(&b) {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
 }
 
 /// Original paths of everything in the trash (all drives).
