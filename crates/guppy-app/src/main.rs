@@ -4069,11 +4069,28 @@ impl Guppy {
                 column![
                     title("Guppy · Keys".into()),
                     small("Everything works from the keyboard. Typing filters the active pane, ~ or / jumps to a folder. Without marks, file operations act on the entry under the cursor; Enter confirms, Esc cancels.".into()),
-                    row![
-                        column![section(&HELP[0]), section(&HELP[1])].spacing(18).width(Length::Fill),
-                        column![section(&HELP[2]), section(&HELP[3])].spacing(18).width(Length::Fill),
-                    ]
-                    .spacing(24),
+                    // On small windows the key list scrolls so the footer (checkbox, OK) stays visible.
+                    scrollable(
+                        // Narrow windows (e.g. tiled to half a screen) get one column instead of two.
+                        if self.width < 760.0 {
+                            Element::from(
+                                column![section(&HELP[0]), section(&HELP[1]), section(&HELP[2]), section(&HELP[3])]
+                                    .spacing(18)
+                                    .width(Length::Fill)
+                                    .padding(iced::Padding { right: 12.0, ..Default::default() }),
+                            )
+                        } else {
+                            row![
+                                column![section(&HELP[0]), section(&HELP[1])].spacing(18).width(Length::Fill),
+                                column![section(&HELP[2]), section(&HELP[3])].spacing(18).width(Length::Fill),
+                            ]
+                            .spacing(24)
+                            .padding(iced::Padding { right: 12.0, ..Default::default() })
+                            .into()
+                        },
+                    )
+                    .direction(scrollable::Direction::Vertical(scrollable::Scrollbar::new().width(4).scroller_width(4)))
+                    .height(if self.compact_help() { Length::Fill } else { Length::Shrink }),
                     row![
                         if *startup {
                             // Flat checkbox: small bordered box, filled when on.
@@ -4118,6 +4135,7 @@ impl Guppy {
         };
 
         let viewer = matches!(dialog, Dialog::View { .. } | Dialog::Edit { .. });
+        let tall_help = matches!(dialog, Dialog::Help { .. }) && self.compact_help();
         let card = container(content)
             .padding(22)
             .width(match dialog {
@@ -4126,7 +4144,7 @@ impl Guppy {
                 Dialog::Settings { .. } | Dialog::Jobs | Dialog::Conflict { .. } | Dialog::Palette { .. } | Dialog::Drives { .. } | Dialog::Attrs { .. } => Length::Fixed(560.0),
                 _ => Length::Fixed(480.0),
             })
-            .height(if viewer { Length::Fill } else { Length::Shrink })
+            .height(if viewer || tall_help { Length::Fill } else { Length::Shrink })
             .max_width(1400)
         .style(move |_| container::Style {
             background: Some(rgb(t.sheet).into()),
@@ -4135,7 +4153,7 @@ impl Guppy {
         });
         // The backdrop darkens and the card rises a few pixels as it opens.
         let k = Self::eased(self.dialog_at, APPEAR);
-        let pad = if viewer { 32.0 } else { 0.0 };
+        let pad = if viewer { 32.0 } else if tall_help { 16.0 } else { 0.0 };
         Some(
             container(card)
                 .center(Length::Fill)
@@ -4146,6 +4164,11 @@ impl Guppy {
                 })
                 .into(),
         )
+    }
+
+    /// The key help is about 780 px tall; below that it fills the window and scrolls.
+    fn compact_help(&self) -> bool {
+        self.height > 0.0 && self.height < 820.0
     }
 
     /// The content of a viewer: pictures fit the area, text scrolls.
