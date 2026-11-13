@@ -563,6 +563,23 @@ fn remove(p: &Path) -> io::Result<()> {
     if p.symlink_metadata()?.is_dir() { std::fs::remove_dir_all(p) } else { std::fs::remove_file(p) }
 }
 
+/// If `dst` only "exists" because its folder holds an entry whose name
+/// differs (in case or Unicode form), returns that entry's real name.
+fn case_alias(dst: &Path) -> Option<String> {
+    let (parent, name) = (dst.parent()?, dst.file_name()?);
+    let mut found = None;
+    for e in std::fs::read_dir(parent).ok()?.flatten() {
+        let n = e.file_name();
+        if n == name {
+            return None;
+        }
+        if n.to_string_lossy().to_lowercase() == name.to_string_lossy().to_lowercase() {
+            found = Some(n.to_string_lossy().into_owned());
+        }
+    }
+    found
+}
+
 /// Where an entry goes once a possible conflict is settled.
 enum Place {
     /// Write to this path (free, or the old entry was removed).
@@ -577,6 +594,17 @@ fn place(job: &Job, src: &Path, dst: &Path, src_dir: bool) -> io::Result<Place> 
     let Ok(dm) = dst.symlink_metadata() else { return Ok(Place::New(dst.to_path_buf())) };
     if src == dst {
         return Ok(Place::New(free_name(dst)));
+    }
+    // Case-insensitive targets (SMB, exFAT, macOS, Windows) report `dst` as taken
+    // when only a name differing in case exists, e.g. `ipt_ECN.h` vs `ipt_ecn.h`.
+    // Overwriting would lose a file, so keep both without asking.
+    if let Some(other) = case_alias(dst) {
+        let free = free_name(dst);
+        job.problem(src, format!(
+            "target ignores upper/lower case and already has \"{other}\"; saved as \"{}\"",
+            free.file_name().unwrap_or_default().to_string_lossy()
+        ));
+        return Ok(Place::New(free));
     }
     match job.resolve(src, dst) {
         Resolve::Skip => Ok(Place::Skip),
@@ -752,6 +780,17 @@ mod tests {
         wait(&job);
         assert!(!b.join("big").exists());
         std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn case_alias_finds_other_spelling() {
+        let d = std::env::temp_dir().join(format!("guppy-alias-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        std::fs::write(d.join("ipt_ECN.h"), "").unwrap();
+        assert_eq!(case_alias(&d.join("ipt_ecn.h")).as_deref(), Some("ipt_ECN.h"));
+        assert_eq!(case_alias(&d.join("ipt_ECN.h")), None);
+        assert_eq!(case_alias(&d.join("other")), None);
+        std::fs::remove_dir_all(&d).unwrap();
     }
 
     #[test]
