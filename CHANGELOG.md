@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.5.1] - 2026-11-13
+
+### Fixed
+- The key help at startup fits small and scaled screens (e.g. 1920×1200 at scale 2): the
+  key list scrolls and the "Show at every start" checkbox and OK stay visible; in narrow
+  windows the keys are shown in one column.
+- Files open via `gio`, so the type from the file name wins over content sniffing.
+- Moving to the trash never copies across devices; if the trash on that volume can't take
+  the files, Guppy refuses instead of copying them.
+
 ## [0.5.0] - 2026-10-21
 
 ### Added
