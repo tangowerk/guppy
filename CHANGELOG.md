@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.5.2] - 2026-11-13
+
+### Fixed
+- Copying to a target that ignores upper/lower case (SMB shares, exFAT) no longer asks to
+  overwrite when two names differ only in case (e.g. `ipt_ECN.h` and `ipt_ecn.h`): both are
+  kept, the second as `… (2)`, and the summary says so.
+- Sizes are labelled in binary units (KiB, MiB, GiB, TiB), matching what is computed and
+  what `du -h` shows.
+
 ## [0.5.1] - 2026-11-13
 
 ### Fixed
