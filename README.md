@@ -21,9 +21,9 @@ picks up the colors of the active Omarchy theme. It also builds on Windows and m
 ### Folder sizes, right in the list
 
 Every folder shows its real size, not just files. Guppy walks the folders in the background on
-all CPU cores while you keep working, and the numbers fill in as they come (`… 1.2 GB` while
+all CPU cores while you keep working, and the numbers fill in as they come (`… 1.2 GiB` while
 counting). Results are cached on disk (`~/.cache/guppy/sizes.bin`), so the next time you open
-a folder the sizes are there at once (shown as `≈ 3.4 GB` until they've been checked again).
+a folder the sizes are there at once (shown as `≈ 3.4 GiB` until they've been checked again).
 When something changes, only the affected folders are counted again.
 
 The path line above each pane shows the size of every folder on the way, from `~` down to

@@ -128,9 +128,9 @@ pub fn glob_match(pattern: &str, name: &str) -> bool {
     p[i..].iter().all(|&c| c == '*')
 }
 
-/// Human-readable size, e.g. `4.8 KB`.
+/// Human-readable size, e.g. `4.8 KiB`.
 pub fn human_size(bytes: u64) -> String {
-    const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
+    const UNITS: [&str; 5] = ["B", "KiB", "MiB", "GiB", "TiB"];
     let mut v = bytes as f64;
     let mut i = 0;
     while v >= 1024.0 && i < UNITS.len() - 1 {
@@ -165,7 +165,7 @@ mod tests {
     #[test]
     fn sizes() {
         assert_eq!(human_size(214), "214 B");
-        assert_eq!(human_size(4915), "4.8 KB");
+        assert_eq!(human_size(4915), "4.8 KiB");
     }
 
     #[test]
